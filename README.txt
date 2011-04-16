@@ -10,7 +10,7 @@ specially when searching shops with thousands of items which usually return
 search results of many hundreds of items that are pretty unhelpful if 
 sorted alphabetically, by price, etc with no relevance sorting.
 
-This contribution was coded by AJ Justo, ajweb.eu, but the original idea 
+This contribution was coded by AJ Justo, http://www.ajweb.eu, but the original idea 
 was found in this post:
 http://www.zen-cart.com/forum/showthread.php?t=131747&page=1
 by madhouse (Rob).
