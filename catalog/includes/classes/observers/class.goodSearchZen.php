@@ -13,12 +13,7 @@
 			global $order_str, $listing_sql, $select_str, $where_str, $keywords;
 
 			switch( $eventID ) {					
-				case 'NOTIFY_SEARCH_ORDERBY_STRING':
-						
-					$listing_sql = str_replace($order_str,
-												' order by rank1 DESC, rank2 DESC, p.products_sort_order, pd.products_name',
-												$listing_sql);
-					break;					
+				
 				case 'NOTIFY_SEARCH_SELECT_STRING':
 					// code bellow by Rob - www.funkyraw.com
 					$robs_keywords=stripslashes($_GET['keyword']);
@@ -27,10 +22,20 @@
 					// end of code by Rob
 					break;
 					
+				// we assume search for products_id
+/*
 				case 'NOTIFY_SEARCH_WHERE_STRING':
-					$where_str .= ' OR (p.products_id=\''.$keywords.'\')';
+					if(is_numeric($keywords)) $where_str = ' WHERE p.products_id=\''.$keywords.'\'';
+					break;*/
+
 					
-					break;
+				case 'NOTIFY_SEARCH_ORDERBY_STRING':
+						
+					$listing_sql = str_replace($order_str,
+												' order by rank1 DESC, rank2 DESC, p.products_sort_order, pd.products_name',
+												$listing_sql);
+					break;	
+
 			}
 		}
 

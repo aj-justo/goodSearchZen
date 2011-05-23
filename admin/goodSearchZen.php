@@ -9,18 +9,23 @@
  * @todo Msg on activation/deactivation. Translations. Move to Configuration menu. Activate the fulltext search on admin site.
  */
 
- require('includes/application_top.php');
+ error_reporting(E_ALL);
+ ini_set('display_errors', 'On');
+
+require('includes/application_top.php');
 
 $goodZenSearch_Files = array(
 							DIR_FS_ADMIN.'goodSearchZen.php',
-							DIR_FS_ADMIN.DIR_WS_INCLUDES.'extra_configures/goodSearchZen.php',
+							DIR_FS_ADMIN.DIR_WS_INCLUDES.'extra_datafiles/goodSearchZen.php',
 							DIR_FS_ADMIN.DIR_WS_BOXES.'extra_boxes/goodSearchZen_catalog_dhtml.php',
 							DIR_FS_CATALOG.DIR_WS_CLASSES.'observers/class.goodSearchZen.php',
 							DIR_FS_CATALOG.DIR_WS_INCLUDES.'auto_loaders/config.goodSearchZen.php'
 							);
 $goodZenSearch_Msg = array();
 
- switch($_GET['action']):
+$action = !isset($_GET['action']) ? 'check' : $_GET['action'];
+
+switch($action):
  	case 'install': 
  		if( goodSearchZen_Install() ) $goodZenSearch_Msg[] = 'Good Search Zen Installation: Everything OK.';
  		else $goodZenSearch_Msg[] = 'Good Search Installation: PROBLEMS FOUND. Please retry the installation or 
@@ -32,7 +37,21 @@ $goodZenSearch_Msg = array();
  		elseif( $_GET['status'] === '0' ) goodSearchZen_ActivationToogle(0);
  		break;
  		
- 	case 'check':
+ 	case 'uninstall':
+ 		if( goodSearchZen_Uninstall() ) {
+ 			$goodZenSearch_Msg[] = 'Good Search Zen Uninstallation: The DB has been cleaned. 
+ 									You should now remove the files associated with this contribution:';
+ 			foreach( $goodZenSearch_Files as $file ) {
+ 				$goodZenSearch_Msg[] = $file;
+ 			}
+ 		}
+ 		else $goodZenSearch_Msg[] = 'Good Search Zen Uninstallation: There has been a problem trying to clean the DB. Please try again. 
+ 									If the problem continues, you may want to do the cleaning yourself with these SQL statements:<br/>
+ 									<code>DROP INDEX fulltextsearch_name ON products_description;<br/>
+						 			DROP INDEX fulltextsearch_description ON products_description;</code>';
+ 		break;
+		
+	 case 'check':
  		$check=true;
  		if( !goodSearchZen_CheckDB() ) {
  			$goodZenSearch_Msg[] = 'Good Search Zen Installation check: The database is not ready. 
@@ -51,47 +70,38 @@ $goodZenSearch_Msg = array();
  		
  		if( $check===true ) $goodZenSearch_Msg[] = 'Good Search Zen Installation check: Everything OK.';
  		break;
- 		
- 	case 'uninstall':
- 		if( goodSearchZen_Uninstall() ) {
- 			$goodZenSearch_Msg[] = 'Good Search Zen Uninstallation: The DB has been cleaned. 
- 									You should now remove the files associated with this contribution:';
- 			foreach( $goodZenSearch_Files as $file ) {
- 				$goodZenSearch_Msg[] = $file;
- 			}
- 		}
- 		else $goodZenSearch_Msg[] = 'Good Search Zen Uninstallation: There has been a problem trying to clean the DB. Please try again. 
- 									If the problem continues, you may want to do the cleaning yourself with these SQL statements:<br/>
- 									<code>DROP INDEX fulltextsearch_name ON products_description;<br/>
-						 			DROP INDEX fulltextsearch_description ON products_description;</code>';
- 		break;
- endswitch;
+endswitch;
  
 
 function goodSearchZen_Install() {
  	global $db;
  	
  	// if no indexes found, run create queries
- 	if( !goodSearchZen_Check() ) {
+ 	if( !goodSearchZen_CheckDB_indexProductsName() ) {
 	 	$createNameIndexSQL = "CREATE FULLTEXT INDEX fulltextsearch_name ON ".TABLE_PRODUCTS_DESCRIPTION."(products_name)";	
 		$db->Execute($createNameIndexSQL);	
+	}
+	if( !goodSearchZen_CheckDB_indexProductsDesc() ) {
 		$createDescIndexSQL = "CREATE FULLTEXT INDEX fulltextsearch_description ON ".TABLE_PRODUCTS_DESCRIPTION."(products_description)";	
 		$db->Execute($createDescIndexSQL);	
-		
+	}
+	
+	if( !goodSearchZen_CheckDB_configurationEntry() )	 {
 		goodSearchZen_ActivationInstall();
-		
-		// check again if indexes have been correctly added
-		if( !goodSearchZen_Check() ) return false;
- 	}
+	}
+				
+	// check again if indexes have been correctly added
+	if( !goodSearchZen_Check() ) return false;
+
  	return true;
  }
  
 function goodSearchZen_ActivationInstall() {
 	global $db;
-    $installSQL = "insert into " . TABLE_CONFIGURATION . 
+    $installSQL = "INSERT INTO " . TABLE_CONFIGURATION . 
     				" (configuration_title, configuration_key, configuration_value, configuration_description, configuration_group_id, 
     				sort_order,  last_modified)
-    				 values ('Good Search Zen Activation State', 'GOOD_SEARCH_ZEN_ACTIVE_STATE', '1', 'Activate Good Search Zen?', 
+    				 VALUES ('Good Search Zen Activation State', 'GOOD_SEARCH_ZEN_ACTIVE_STATE', '1', 'Activate Good Search Zen?', 
     				 '0', '0', now())";
 	$db->Execute($installSQL);
 }
@@ -106,6 +116,7 @@ function goodSearchZen_checkActive() {
 	global $db;
     $check_query = $db->Execute("SELECT * FROM " . TABLE_CONFIGURATION . 
     				" WHERE configuration_key='GOOD_SEARCH_ZEN_ACTIVE_STATE' AND configuration_value=1");
+
     return $check_query->RecordCount();
 }
  
@@ -115,27 +126,48 @@ function goodSearchZen_Check() {
 }
 
 function goodSearchZen_CheckDB() {
-	global $db; $check1 = false; $check2 = false; $check3 = false;
+	global $db;
+	$check1 = false; $check2 = false; $check3 = false;
 	
+	if( goodSearchZen_CheckDB_indexProductsName() ) $check1 = true;			
+
+	if( goodSearchZen_CheckDB_indexProductsDesc() ) $check2 = true;
+	
+	if( goodSearchZen_CheckDB_configurationEntry() ) $check3 = true;
+
+	if( $check1 and $check2 and $check3 ) return true;
+	return false;
+}
+
+function goodSearchZen_CheckDB_indexProductsName() {
+	global $db;
 	// check name index
 	$nameIndexSQL = "SHOW INDEX FROM ".TABLE_PRODUCTS_DESCRIPTION. 
   	" WHERE Key_name = 'fulltextsearch_name' "; 
 	$checkNameIndex = $db->Execute($nameIndexSQL);
-	if( $checkNameIndex->fields['Index_type'] == 'FULLTEXT' ) $check1 = true;				
-	
+		
+	if( $checkNameIndex->fields['Index_type'] == 'FULLTEXT' ) return true;
+	else return false;
+}
+
+function goodSearchZen_CheckDB_indexProductsDesc() {
+	global $db;
 	// check description index
 	$descIndexSQL = "SHOW INDEX FROM ".TABLE_PRODUCTS_DESCRIPTION. 
 				  	" WHERE Key_name = 'fulltextsearch_description' ";
 	$checkDescIndex = $db->Execute($descIndexSQL);
-	if( $checkDescIndex->fields['Index_type'] == 'FULLTEXT' ) $check2 = true;
-	
+	if( $checkDescIndex->fields['Index_type'] == 'FULLTEXT' ) return true;
+	else return false;
+}
+
+function goodSearchZen_CheckDB_configurationEntry() {
+	global $db;
 	// check presence of activation field
 	$check_query = $db->Execute("SELECT * FROM " . TABLE_CONFIGURATION . 
     				" WHERE configuration_key='GOOD_SEARCH_ZEN_ACTIVE_STATE' ");
-    if( $check_query->RecordCount() > 0 ) $check3 = true;
-
-	if( $check1 and $check2 and $check3 ) return true;
-	return false;
+	
+    if( $check_query->RecordCount() > 0 ) return true;
+	else return false;
 }
 
 function goodSearchZen_CheckFiles() {
